@@ -1,0 +1,9 @@
+[database]
+dsn = "root:st123456@tcp(127.0.0.1:4306)/stake_db?charset=utf8mb4&parseTime=True&loc=Local"
+
+[ethereum]
+rpc_url = "https://eth-sepolia.g.alchemy.com/v2/xKBTFF983ViLIrQj7MyvU_OLWrpSI-KC"
+chain_id = 11155111
+contract_address = "0xf99c949B9c6B73E20f123b34515a9ecC05c79703"
+created_tx_hash = "0x2114bd5ef5f41ef5ae96d5a42c09120841b943a831d785d5a190b97fe64682b9"
+confirmations = 12
