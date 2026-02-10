@@ -27,7 +27,7 @@ func NewScannerService(
 	contractAddr string,
 	confirmations int64,
 ) (*ScannerService, error) {
-	decoder, err := NewEventDecoder()
+	processor, err := NewBlockProcessor(repo, client)
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +35,7 @@ func NewScannerService(
 	return &ScannerService{
 		repo:          repo,
 		client:        client,
-		processor:     NewBlockProcessor(repo, client, decoder),
+		processor:     processor,
 		reorgHandler:  NewReorgHandler(repo, client),
 		chainID:       chainID,
 		contractAddr:  contractAddr,

@@ -1,0 +1,8 @@
+[database]
+dsn = "username:password@tcp(localhost:3306)/stake_db?charset=utf8mb4&parseTime=True&loc=Local"
+
+[ethereum]
+rpc_url = "https://your-rpc-endpoint.com"
+chain_id = 1
+contract_address = "0xYourContractAddress"
+confirmations = 12
