@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/dijiacoder/staking-indexer/internal/logger"
 	"github.com/dijiacoder/staking-indexer/internal/repository"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"go.uber.org/zap"
 )
 
 type ReorgHandler struct {
@@ -31,8 +33,12 @@ func (h *ReorgHandler) CheckAndHandleReorg(ctx context.Context, chainID int64, c
 
 	// 2. Compare DB's recorded hash for block N-1 with current block N's parent hash
 	if prevBlock.BlockHash != currentParentHash {
-		fmt.Printf("Reorg detected at block %d! DB Hash for %d: %s, Block %d Parent Hash: %s\n",
-			currentBlockNumber, currentBlockNumber-1, prevBlock.BlockHash, currentBlockNumber, currentParentHash)
+		logger.Logger.Warn("Reorg detected",
+			zap.Int64("block", currentBlockNumber),
+			zap.Int64("prev_block", currentBlockNumber-1),
+			zap.String("db_hash", prevBlock.BlockHash),
+			zap.String("parent_hash", currentParentHash),
+		)
 
 		// 3. Find common ancestor by walking back
 		commonAncestor, err := h.findCommonAncestor(ctx, chainID, currentBlockNumber-1)
@@ -40,7 +46,9 @@ func (h *ReorgHandler) CheckAndHandleReorg(ctx context.Context, chainID int64, c
 			return false, fmt.Errorf("failed to find common ancestor: %w", err)
 		}
 
-		fmt.Printf("Found common ancestor at block %d. Rolling back...\n", commonAncestor)
+		logger.Logger.Info("Found common ancestor, rolling back",
+			zap.Int64("ancestor", commonAncestor),
+		)
 
 		// 4. Execute rollback in repository (atomic transaction)
 		if err := h.repo.HandleReorg(ctx, chainID, contractAddress, commonAncestor); err != nil {

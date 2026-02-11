@@ -2,11 +2,12 @@ package scanner
 
 import (
 	"context"
-	"fmt"
 	"time"
 
+	"github.com/dijiacoder/staking-indexer/internal/logger"
 	"github.com/dijiacoder/staking-indexer/internal/repository"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"go.uber.org/zap"
 )
 
 type ScannerService struct {
@@ -44,16 +45,19 @@ func NewScannerService(
 	}, nil
 }
 
-// Start runs the scanner loop.
+// Start  runs the scanner loop.
 func (s *ScannerService) Start(ctx context.Context) error {
-	fmt.Printf("Starting scanner for chain %d, contract %s\n", s.chainID, s.contractAddr)
+	logger.Logger.Info("Starting scanner",
+		zap.Int64("chain_id", s.chainID),
+		zap.String("contract", s.contractAddr),
+	)
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 			if err := s.scan(ctx); err != nil {
-				fmt.Printf("Scan error: %v\n", err)
+				logger.Logger.Error("Scan error", zap.Error(err))
 			}
 			time.Sleep(s.scanInterval)
 		}
@@ -85,11 +89,15 @@ func (s *ScannerService) scan(ctx context.Context) error {
 		endBlock = cursor.LastScannedBlock + 100
 	}
 
-	fmt.Printf("Scanning blocks %d to %d (latest: %d, safe: %d)\n",
-		cursor.LastScannedBlock+1, endBlock, latestBlock, safeBlock)
+	logger.Logger.Info("Scanning blocks",
+		zap.Int64("from", cursor.LastScannedBlock+1),
+		zap.Int64("to", endBlock),
+		zap.Uint64("latest", latestBlock),
+		zap.Int64("safe", safeBlock),
+	)
 
 	for nextBlock := cursor.LastScannedBlock + 1; nextBlock <= endBlock; nextBlock++ {
-		fmt.Printf("Scanning block %d\n", nextBlock)
+		logger.Logger.Debug("Scanning block", zap.Int64("block", nextBlock))
 		// A. Fetch current block header for reorg verification
 		header, err := s.processor.GetHeader(ctx, nextBlock)
 		if err != nil {
@@ -103,7 +111,9 @@ func (s *ScannerService) scan(ctx context.Context) error {
 		}
 
 		if reorged {
-			fmt.Printf("Reorg handled at block %d. Restarting scan loop...\n", nextBlock)
+			logger.Logger.Info("Reorg handled, restarting scan loop",
+				zap.Int64("block", nextBlock),
+			)
 			return nil // Exit scan to let next iteration start from new cursor
 		}
 

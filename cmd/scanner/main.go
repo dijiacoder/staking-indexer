@@ -4,15 +4,16 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/dijiacoder/staking-indexer/internal/config"
+	"github.com/dijiacoder/staking-indexer/internal/logger"
 	"github.com/dijiacoder/staking-indexer/internal/repository"
 	"github.com/dijiacoder/staking-indexer/internal/service/scanner"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"go.uber.org/zap"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -24,19 +25,19 @@ func main() {
 
 	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		logger.Logger.Fatal("Failed to load config", zap.Error(err))
 	}
 
 	// 2. Initialize Database Connection
 	db, err := gorm.Open(mysql.Open(cfg.Database.DSN), &gorm.Config{})
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		logger.Logger.Fatal("Failed to connect to database", zap.Error(err))
 	}
 
 	// 3. Initialize Ethereum RPC Client
 	client, err := ethclient.Dial(cfg.Ethereum.RPCURL)
 	if err != nil {
-		log.Fatalf("Failed to connect to Ethereum RPC: %v", err)
+		logger.Logger.Fatal("Failed to connect to Ethereum RPC", zap.Error(err))
 	}
 
 	// 4. Wire Dependencies (Repository & Service)
@@ -49,7 +50,7 @@ func main() {
 		cfg.Ethereum.Confirmations,
 	)
 	if err != nil {
-		log.Fatalf("Failed to create scanner service: %v", err)
+		logger.Logger.Fatal("Failed to create scanner service", zap.Error(err))
 	}
 
 	// 5. Setup Context and Signal Handling for Graceful Shutdown
@@ -61,15 +62,18 @@ func main() {
 
 	go func() {
 		sig := <-sigChan
-		log.Printf("Received signal: %v. Initiating graceful shutdown...", sig)
+		logger.Logger.Info("Received signal. Initiating graceful shutdown...",
+			zap.String("signal", sig.String()))
 		cancel()
 	}()
 
 	// 6. Execute Scanner Service
-	log.Printf("MetaNode Stake Scanner started. ChainID: %d, Contract: %s", cfg.Ethereum.ChainID, cfg.Ethereum.ContractAddr)
+	logger.Logger.Info("ZeroToken Stake Scanner started",
+		zap.Int64("chain_id", cfg.Ethereum.ChainID),
+		zap.String("contract", cfg.Ethereum.ContractAddr))
 	if err := svc.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		log.Fatalf("Scanner execution error: %v", err)
+		logger.Logger.Fatal("Scanner execution error", zap.Error(err))
 	}
 
-	log.Println("Scanner stopped.")
+	logger.Logger.Info("Scanner stopped")
 }
