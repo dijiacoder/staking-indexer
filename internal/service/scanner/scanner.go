@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/dijiacoder/staking-indexer/internal/logger"
@@ -68,13 +69,15 @@ func (s *ScannerService) scan(ctx context.Context) error {
 	// 1. Get current cursor from DB
 	cursor, err := s.repo.GetCursor(ctx, s.chainID, s.contractAddr)
 	if err != nil {
-		return fmt.Errorf("failed to get cursor: %w", err)
+		logger.Logger.Error("get cursor error", zap.Error(err))
+		return err
 	}
 
 	// 2. Get latest block number from the chain
 	latestBlock, err := s.client.BlockNumber(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get latest block: %w", err)
+		logger.Logger.Error("get block number error", zap.Error(err))
+		return err
 	}
 
 	// 3. Calculate the highest safe block we can process
@@ -101,7 +104,8 @@ func (s *ScannerService) scan(ctx context.Context) error {
 		// A. Fetch current block header for reorg verification
 		header, err := s.processor.GetHeader(ctx, nextBlock)
 		if err != nil {
-			return fmt.Errorf("failed to get header for block %d: %w", nextBlock, err)
+			logger.Logger.Error("get header error", zap.Error(err))
+			return fmt.Errorf("get header error, block: %d, error: %w", nextBlock, err)
 		}
 
 		// B. Verify chain continuity (Reorg Detection)

@@ -6,8 +6,9 @@ import (
 
 // EventHandlerContext 处理器上下文
 type EventHandlerContext struct {
-	// 原始日志，handler 自己解析组装数据
-	Log types.Log
+	Log             types.Log
+	ChainID         int64
+	ContractAddress string
 }
 
 // EventHandler 事件处理器接口

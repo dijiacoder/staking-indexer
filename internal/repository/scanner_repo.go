@@ -19,6 +19,8 @@ type ScannerRepository interface {
 
 	HandleReorg(ctx context.Context, chainID int64, contractAddress string, rollbackToBlock int64) error
 	GetCursor(ctx context.Context, chainID int64, contractAddress string) (*model.ChainScanCursor, error)
+
+	SavePool(ctx context.Context, pool *model.StakingPool) error
 }
 
 type scannerRepository struct {
@@ -31,6 +33,13 @@ func NewScannerRepository(db *gorm.DB) ScannerRepository {
 		db: db,
 		q:  query.Use(db),
 	}
+}
+
+func (r *scannerRepository) SavePool(ctx context.Context, pool *model.StakingPool) error {
+	return r.q.StakingPool.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "chain_id"}, {Name: "contract_address"}, {Name: "pool_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"stake_token", "reward_token", "start_block", "end_block", "reward_per_block"}),
+	}).Create(pool)
 }
 
 func (r *scannerRepository) GetCursor(ctx context.Context, chainID int64, contractAddress string) (*model.ChainScanCursor, error) {

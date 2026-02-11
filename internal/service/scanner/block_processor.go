@@ -17,7 +17,7 @@ import (
 type BlockProcessor struct {
 	repo           repository.ScannerRepository
 	client         *ethclient.Client
-	eventProcessor *event.EventProcessor
+	eventProcessor *event.Processor
 }
 
 func NewBlockProcessor(repo repository.ScannerRepository, client *ethclient.Client) (*BlockProcessor, error) {
@@ -46,14 +46,18 @@ func (p *BlockProcessor) ProcessBlock(ctx context.Context, chainID int64, contra
 		return err
 	}
 
-	logger.Logger.Info("Found logs in block",
-		zap.Int("count", len(logs)),
-		zap.Int64("block_number", blockNumber),
-	)
+	if len(logs) != 0 {
 
-	// 3. 分发到事件处理器
-	if err := p.eventProcessor.ProcessEvents(ctx, logs); err != nil {
-		return fmt.Errorf("failed to process events: %w", err)
+		logger.Logger.Info("Found logs in block",
+			zap.Int("count", len(logs)),
+			zap.Int64("block_number", blockNumber),
+		)
+
+		// 3. 分发到事件处理器
+		if err := p.eventProcessor.ProcessEvents(ctx, chainID, contractAddress, logs); err != nil {
+			logger.Logger.Error("process events error", zap.Error(err))
+			return err
+		}
 	}
 
 	// 4. Save block header for reorg detection
@@ -65,6 +69,7 @@ func (p *BlockProcessor) ProcessBlock(ctx context.Context, chainID int64, contra
 		IsConfirmed: 1,
 	}
 	if err := p.repo.SaveBlock(ctx, blockModel); err != nil {
+		logger.Logger.Error("save block error", zap.Error(err))
 		return err
 	}
 

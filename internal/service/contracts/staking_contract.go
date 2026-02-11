@@ -32,7 +32,7 @@ func NewStakingContract() *StakingContract {
 		"SetStartBlock":        "SetStartBlock(uint256)",
 		"SetEndBlock":          "SetEndBlock(uint256)",
 		"SetZeroTokenPerBlock": "SetZeroTokenPerBlock(uint256)",
-		"AddPool":              "AddPool(address,uint256,uint256,uint256,uint256)",
+		"AddPool":              "AddPool(uint256,address,uint256,uint256,uint256,uint256)",
 		"UpdatePoolInfo":       "UpdatePoolInfo(uint256,uint256,uint256)",
 		"SetPoolWeight":        "SetPoolWeight(uint256,uint256,uint256)",
 		"UpdatePool":           "UpdatePool(uint256,uint256,uint256)",
@@ -63,14 +63,4 @@ func (sc *StakingContract) GetEventName(eventHash common.Hash) (string, bool) {
 func (sc *StakingContract) GetEventSignature(eventName string) (common.Hash, bool) {
 	hash, exists := sc.EventNames[eventName]
 	return hash, exists
-}
-
-// IsUserInteractionEvent 检查是否是需要存储到数据库的用户交互事件
-func (sc *StakingContract) IsUserInteractionEvent(eventName string) bool {
-	switch eventName {
-	case "Deposit", "RequestUnstake", "Claim", "Withdraw", "AddPool":
-		return true
-	default:
-		return false
-	}
 }

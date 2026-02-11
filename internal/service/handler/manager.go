@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/dijiacoder/staking-indexer/internal/logger"
@@ -23,6 +24,8 @@ func NewEventHandlerManager() *EventHandlerManager {
 	}
 
 	// 注册所有处理器
+	manager.RegisterHandler(NewSetZeroTokenEventHandler())
+	manager.RegisterHandler(NewAddPoolEventHandler())
 	manager.RegisterHandler(NewDepositEventHandler())
 	manager.RegisterHandler(NewRequestUnstakeEventHandler())
 	manager.RegisterHandler(NewClaimEventHandler())
@@ -44,8 +47,9 @@ func (m *EventHandlerManager) GetHandler(eventName string) (EventHandler, bool) 
 }
 
 // HandleEvent 根据原始日志分发到对应处理器
-func (m *EventHandlerManager) HandleEvent(log types.Log) error {
+func (m *EventHandlerManager) HandleEvent(ctx context.Context, chainID int64, contractAddress string, log types.Log) error {
 	if len(log.Topics) == 0 {
+		logger.Logger.Error("log has no topics")
 		return fmt.Errorf("log has no topics")
 	}
 
@@ -58,13 +62,6 @@ func (m *EventHandlerManager) HandleEvent(log types.Log) error {
 		return nil
 	}
 
-	if !m.IsUserInteractionEvent(eventName) {
-		logger.Logger.Debug("skip non-user interaction event",
-			zap.String("event", eventName),
-		)
-		return nil
-	}
-
 	handler, exists := m.GetHandler(eventName)
 	if !exists {
 		logger.Logger.Warn("event handler does not exist",
@@ -73,11 +70,10 @@ func (m *EventHandlerManager) HandleEvent(log types.Log) error {
 		return nil
 	}
 
-	ctx := &EventHandlerContext{Log: log}
-	return handler.HandleEvent(ctx)
-}
-
-// IsUserInteractionEvent 检查是否是用户交互事件
-func (m *EventHandlerManager) IsUserInteractionEvent(eventName string) bool {
-	return m.stakingContract.IsUserInteractionEvent(eventName)
+	eventCtx := &EventHandlerContext{
+		Log:             log,
+		ChainID:         chainID,
+		ContractAddress: contractAddress,
+	}
+	return handler.HandleEvent(eventCtx)
 }
