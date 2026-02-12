@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/dijiacoder/staking-indexer/internal/logger"
+	"github.com/dijiacoder/staking-indexer/internal/repository"
 	"github.com/dijiacoder/staking-indexer/internal/service/handler"
 	"github.com/ethereum/go-ethereum/core/types"
 	"go.uber.org/zap"
@@ -16,9 +17,9 @@ type Processor struct {
 }
 
 // NewEventProcessor 创建新的事件处理器
-func NewEventProcessor() *Processor {
+func NewEventProcessor(repo repository.ScannerRepository) *Processor {
 	return &Processor{
-		handlerMgr: handler.NewEventHandlerManager(),
+		handlerMgr: handler.NewEventHandlerManager(repo),
 	}
 }
 

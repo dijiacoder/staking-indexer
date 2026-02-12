@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dijiacoder/staking-indexer/internal/logger"
+	"github.com/dijiacoder/staking-indexer/internal/repository"
 	"github.com/dijiacoder/staking-indexer/internal/service/contracts"
 	"github.com/ethereum/go-ethereum/core/types"
 	"go.uber.org/zap"
@@ -14,13 +15,15 @@ import (
 type EventHandlerManager struct {
 	handlers        map[string]EventHandler
 	stakingContract *contracts.StakingContract
+	repo            repository.ScannerRepository
 }
 
 // NewEventHandlerManager 创建新的事件处理器管理器
-func NewEventHandlerManager() *EventHandlerManager {
+func NewEventHandlerManager(repo repository.ScannerRepository) *EventHandlerManager {
 	manager := &EventHandlerManager{
 		handlers:        make(map[string]EventHandler),
 		stakingContract: contracts.NewStakingContract(),
+		repo:            repo,
 	}
 
 	// 注册所有处理器
@@ -74,6 +77,8 @@ func (m *EventHandlerManager) HandleEvent(ctx context.Context, chainID int64, co
 		Log:             log,
 		ChainID:         chainID,
 		ContractAddress: contractAddress,
+		Repo:            m.repo,
+		Ctx:             ctx,
 	}
 	return handler.HandleEvent(eventCtx)
 }

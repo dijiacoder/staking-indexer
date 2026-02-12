@@ -24,7 +24,7 @@ func NewBlockProcessor(repo repository.ScannerRepository, client *ethclient.Clie
 	return &BlockProcessor{
 		repo:           repo,
 		client:         client,
-		eventProcessor: event.NewEventProcessor(),
+		eventProcessor: event.NewEventProcessor(repo),
 	}, nil
 }
 
@@ -53,7 +53,7 @@ func (p *BlockProcessor) ProcessBlock(ctx context.Context, chainID int64, contra
 			zap.Int64("block_number", blockNumber),
 		)
 
-		// 3. 分发到事件处理器
+		// 3. 分发事件到处理器
 		if err := p.eventProcessor.ProcessEvents(ctx, chainID, contractAddress, logs); err != nil {
 			logger.Logger.Error("process events error", zap.Error(err))
 			return err

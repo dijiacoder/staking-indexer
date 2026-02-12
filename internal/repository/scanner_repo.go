@@ -13,11 +13,13 @@ type ScannerRepository interface {
 	UpdateCursor(ctx context.Context, chainID int64, contractAddress string, lastScanned int64, lastConfirmed int64) error
 
 	GetBlockByNumber(ctx context.Context, chainID int64, blockNumber int64) (*model.ChainBlock, error)
+
 	SaveBlock(ctx context.Context, block *model.ChainBlock) error
 
 	SaveEventsAndProcessPositions(ctx context.Context, events []*model.StakingEvent) error
 
 	HandleReorg(ctx context.Context, chainID int64, contractAddress string, rollbackToBlock int64) error
+
 	GetCursor(ctx context.Context, chainID int64, contractAddress string) (*model.ChainScanCursor, error)
 
 	SavePool(ctx context.Context, pool *model.StakingPool) error
@@ -38,7 +40,7 @@ func NewScannerRepository(db *gorm.DB) ScannerRepository {
 func (r *scannerRepository) SavePool(ctx context.Context, pool *model.StakingPool) error {
 	return r.q.StakingPool.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "chain_id"}, {Name: "contract_address"}, {Name: "pool_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"stake_token", "reward_token", "start_block", "end_block", "reward_per_block"}),
+		DoNothing: true,
 	}).Create(pool)
 }
 

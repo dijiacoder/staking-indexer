@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"context"
+
+	"github.com/dijiacoder/staking-indexer/internal/repository"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -9,6 +12,8 @@ type EventHandlerContext struct {
 	Log             types.Log
 	ChainID         int64
 	ContractAddress string
+	Repo            repository.ScannerRepository
+	Ctx             context.Context
 }
 
 // EventHandler 事件处理器接口
