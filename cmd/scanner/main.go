@@ -4,15 +4,19 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"log"
+	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/dijiacoder/staking-indexer/internal/config"
+	"github.com/dijiacoder/staking-indexer/internal/logger"
 	"github.com/dijiacoder/staking-indexer/internal/repository"
 	"github.com/dijiacoder/staking-indexer/internal/service/scanner"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -24,19 +28,23 @@ func main() {
 
 	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		logger.Logger.Fatal("Failed to load config", zap.Error(err))
 	}
 
 	// 2. Initialize Database Connection
 	db, err := gorm.Open(mysql.Open(cfg.Database.DSN), &gorm.Config{})
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		logger.Logger.Fatal("Failed to connect to database", zap.Error(err))
+	}
+
+	if cfg.Database.Debug {
+		db = db.Debug()
 	}
 
 	// 3. Initialize Ethereum RPC Client
 	client, err := ethclient.Dial(cfg.Ethereum.RPCURL)
 	if err != nil {
-		log.Fatalf("Failed to connect to Ethereum RPC: %v", err)
+		logger.Logger.Fatal("Failed to connect to Ethereum RPC", zap.Error(err))
 	}
 
 	// 4. Wire Dependencies (Repository & Service)
@@ -44,15 +52,25 @@ func main() {
 	svc, err := scanner.NewScannerService(
 		repo,
 		client,
-		cfg.Ethereum.ChainID,
-		cfg.Ethereum.ContractAddr,
-		cfg.Ethereum.Confirmations,
+		cfg,
 	)
 	if err != nil {
-		log.Fatalf("Failed to create scanner service: %v", err)
+		logger.Logger.Fatal("Failed to create scanner service", zap.Error(err))
 	}
 
-	// 5. Setup Context and Signal Handling for Graceful Shutdown
+	// 5. 启动 Prometheus 监控端点
+	if cfg.Prometheus.Enabled {
+		go func() {
+			http.Handle("/metrics", promhttp.Handler())
+			addr := fmt.Sprintf(":%d", cfg.Prometheus.Port)
+			logger.Logger.Info("Starting Prometheus metrics server", zap.String("address", addr))
+			if err := http.ListenAndServe(addr, nil); err != nil && err != http.ErrServerClosed {
+				logger.Logger.Error("Prometheus server error", zap.Error(err))
+			}
+		}()
+	}
+
+	// 6. Setup Context and Signal Handling for Graceful Shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -61,15 +79,18 @@ func main() {
 
 	go func() {
 		sig := <-sigChan
-		log.Printf("Received signal: %v. Initiating graceful shutdown...", sig)
+		logger.Logger.Info("Received signal. Initiating graceful shutdown...",
+			zap.String("signal", sig.String()))
 		cancel()
 	}()
 
-	// 6. Execute Scanner Service
-	log.Printf("MetaNode Stake Scanner started. ChainID: %d, Contract: %s", cfg.Ethereum.ChainID, cfg.Ethereum.ContractAddr)
+	// 7. Execute Scanner Service
+	logger.Logger.Info("ZeroToken Stake Scanner started",
+		zap.Int64("chain_id", cfg.Ethereum.ChainID),
+		zap.String("contract", cfg.Ethereum.ContractAddr))
 	if err := svc.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		log.Fatalf("Scanner execution error: %v", err)
+		logger.Logger.Fatal("Scanner execution error", zap.Error(err))
 	}
 
-	log.Println("Scanner stopped.")
+	logger.Logger.Info("Scanner stopped")
 }

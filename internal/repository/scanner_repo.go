@@ -5,6 +5,8 @@ import (
 
 	"github.com/dijiacoder/staking-indexer/internal/gen/model"
 	"github.com/dijiacoder/staking-indexer/internal/gen/query"
+	"github.com/dijiacoder/staking-indexer/internal/logger"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -13,12 +15,16 @@ type ScannerRepository interface {
 	UpdateCursor(ctx context.Context, chainID int64, contractAddress string, lastScanned int64, lastConfirmed int64) error
 
 	GetBlockByNumber(ctx context.Context, chainID int64, blockNumber int64) (*model.ChainBlock, error)
+
 	SaveBlock(ctx context.Context, block *model.ChainBlock) error
 
 	SaveEventsAndProcessPositions(ctx context.Context, events []*model.StakingEvent) error
 
 	HandleReorg(ctx context.Context, chainID int64, contractAddress string, rollbackToBlock int64) error
+
 	GetCursor(ctx context.Context, chainID int64, contractAddress string) (*model.ChainScanCursor, error)
+
+	SavePool(ctx context.Context, pool *model.StakingPool) error
 }
 
 type scannerRepository struct {
@@ -31,6 +37,28 @@ func NewScannerRepository(db *gorm.DB) ScannerRepository {
 		db: db,
 		q:  query.Use(db),
 	}
+}
+
+func (r *scannerRepository) SavePool(ctx context.Context, pool *model.StakingPool) error {
+	count, err := r.q.StakingPool.WithContext(ctx).Where(
+		r.q.StakingPool.ChainID.Eq(pool.ChainID),
+		r.q.StakingPool.ContractAddress.Eq(pool.ContractAddress),
+		r.q.StakingPool.PoolID.Eq(pool.PoolID),
+	).Count()
+
+	if err != nil {
+		return err
+	}
+
+	if count > 0 {
+		logger.Logger.Info("pool already exists",
+			zap.Int64("ChainID", pool.ChainID),
+			zap.String("ContractAddress", pool.ContractAddress),
+			zap.Int64("PoolID", pool.PoolID),
+		)
+		return nil
+	}
+	return r.q.StakingPool.WithContext(ctx).Create(pool)
 }
 
 func (r *scannerRepository) GetCursor(ctx context.Context, chainID int64, contractAddress string) (*model.ChainScanCursor, error) {

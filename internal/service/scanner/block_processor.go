@@ -5,21 +5,27 @@ import (
 	"math/big"
 
 	"github.com/dijiacoder/staking-indexer/internal/gen/model"
+	"github.com/dijiacoder/staking-indexer/internal/logger"
 	"github.com/dijiacoder/staking-indexer/internal/repository"
-
+	"github.com/dijiacoder/staking-indexer/internal/service/event"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"go.uber.org/zap"
 )
 
 type BlockProcessor struct {
-	repo    repository.ScannerRepository
-	client  *ethclient.Client
-	decoder *EventDecoder
+	repo           repository.ScannerRepository
+	client         *ethclient.Client
+	eventProcessor *event.Processor
 }
 
-func NewBlockProcessor(repo repository.ScannerRepository, client *ethclient.Client, decoder *EventDecoder) *BlockProcessor {
-	return &BlockProcessor{repo: repo, client: client, decoder: decoder}
+func NewBlockProcessor(repo repository.ScannerRepository, client *ethclient.Client) (*BlockProcessor, error) {
+	return &BlockProcessor{
+		repo:           repo,
+		client:         client,
+		eventProcessor: event.NewEventProcessor(repo),
+	}, nil
 }
 
 func (p *BlockProcessor) ProcessBlock(ctx context.Context, chainID int64, contractAddress string, blockNumber int64) error {
@@ -40,41 +46,18 @@ func (p *BlockProcessor) ProcessBlock(ctx context.Context, chainID int64, contra
 		return err
 	}
 
-	// 3. Decode and collect events
-	var events []*model.StakingEvent
-	for _, log := range logs {
-		decoded, err := p.decoder.DecodeLog(log)
-		if err != nil {
-			continue // Skip logs we don't recognize or fail to decode
-		}
+	if len(logs) != 0 {
 
-		event := &model.StakingEvent{
-			ChainID:         chainID,
-			ContractAddress: contractAddress,
-			PoolID:          decoded.PoolID.Int64(),
-			UserAddress:     decoded.User.Hex(),
-			BlockNumber:     blockNumber,
-			TxHash:          log.TxHash.Hex(),
-			LogIndex:        int32(log.Index),
-		}
+		logger.Logger.Info("Found logs in block",
+			zap.Int("count", len(logs)),
+			zap.Int64("block_number", blockNumber),
+		)
 
-		switch decoded.Name {
-		case "Deposit":
-			event.EventType = "Deposit"
-			fAmount, _ := new(big.Float).SetInt(decoded.Amount).Float64()
-			event.Amount = fAmount
-		case "RequestUnstake":
-			event.EventType = "Withdraw"
-			fAmount, _ := new(big.Float).SetInt(decoded.Amount).Float64()
-			event.Amount = fAmount
-		case "Claim":
-			event.EventType = "Claim"
-			fAmount, _ := new(big.Float).SetInt(decoded.Reward).Float64()
-			event.Amount = fAmount
-		default:
-			continue
+		// 3. 分发事件到处理器
+		if err := p.eventProcessor.ProcessEvents(ctx, chainID, contractAddress, logs); err != nil {
+			logger.Logger.Error("process events error", zap.Error(err))
+			return err
 		}
-		events = append(events, event)
 	}
 
 	// 4. Save block header for reorg detection
@@ -86,11 +69,7 @@ func (p *BlockProcessor) ProcessBlock(ctx context.Context, chainID int64, contra
 		IsConfirmed: 1,
 	}
 	if err := p.repo.SaveBlock(ctx, blockModel); err != nil {
-		return err
-	}
-
-	// 5. Save events and update user positions in a single transaction
-	if err := p.repo.SaveEventsAndProcessPositions(ctx, events); err != nil {
+		logger.Logger.Error("save block error", zap.Error(err))
 		return err
 	}
 
@@ -98,8 +77,6 @@ func (p *BlockProcessor) ProcessBlock(ctx context.Context, chainID int64, contra
 }
 
 func (p *BlockProcessor) GetHeader(ctx context.Context, blockNumber int64) (*model.ChainBlock, error) {
-	// Note: We can't populate ChainID here as it's not passed to this method.
-	// The caller should set the ChainID separately if needed.
 	header, err := p.client.HeaderByNumber(ctx, big.NewInt(blockNumber))
 	if err != nil {
 		return nil, err
