@@ -40,13 +40,28 @@ mysql -u root -p < sql/ddl.sql
 
 ```toml
 [database]
+# 数据库连接配置
+# 格式: username:password@tcp(host:port)/database_name
 dsn = "username:password@tcp(localhost:3306)/stake_db?charset=utf8mb4&parseTime=True&loc=Local"
+debug = false
 
 [ethereum]
-rpc_url = "https://your-rpc-endpoint.com"
-chain_id = 1
-contract_address = "0xYourContractAddress"
-confirmations = 12
+# 以太坊网络配置
+rpc_url = "https://your-rpc-endpoint.com"  # 替换为实际的 RPC 节点地址
+chain_id = 1                               # 主网: 1, Sepolia测试网: 11155111
+contract_address = "0xYourContractAddress" # 替换为实际的合约地址
+confirmations = 12                         # 区块确认数
+
+[scanner]
+# 扫描器配置
+batch_size = 10        # 每次扫描的区块数量
+scan_interval = 1      # 扫描间隔(秒)
+scan_timeout = 30      # 扫描超时时间(秒)
+
+[prometheus]
+# 监控配置
+enabled = true         # 是否启用 Prometheus 监控
+port = 9090           # 监控端口
 ```
 
 ### 构建与运行
