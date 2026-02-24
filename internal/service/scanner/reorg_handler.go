@@ -6,6 +6,7 @@ import (
 	"math/big"
 
 	"github.com/dijiacoder/staking-indexer/internal/logger"
+	"github.com/dijiacoder/staking-indexer/internal/metrics"
 	"github.com/dijiacoder/staking-indexer/internal/repository"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"go.uber.org/zap"
@@ -49,6 +50,16 @@ func (h *ReorgHandler) CheckAndHandleReorg(ctx context.Context, chainID int64, c
 		logger.Logger.Info("Found common ancestor, rolling back",
 			zap.Int64("ancestor", commonAncestor),
 		)
+
+		// 记录回滚区块数
+		rollbackBlocks := currentBlockNumber - 1 - commonAncestor
+		if rollbackBlocks > 0 {
+			labels := map[string]string{
+				"chain_id":        fmt.Sprintf("%d", chainID),
+				"contract_address": contractAddress,
+			}
+			metrics.ReorgRollbackBlocks.With(labels).Add(float64(rollbackBlocks))
+		}
 
 		// 4. Execute rollback in repository (atomic transaction)
 		if err := h.repo.HandleReorg(ctx, chainID, contractAddress, commonAncestor); err != nil {

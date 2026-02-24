@@ -1,6 +1,6 @@
 [database]
 dsn = "root:st123456@tcp(127.0.0.1:4306)/stake_db?charset=utf8mb4&parseTime=True&loc=Local"
-debug = true
+debug = false
 
 [ethereum]
 # https://sepolia.infura.io/v3/d8ed0bd1de8242d998a1405b6932ab33
@@ -15,3 +15,7 @@ confirmations = 12
 batch_size = 10
 scan_interval = 1
 scan_timeout = 30
+
+[prometheus]
+enabled = true
+port = 9090

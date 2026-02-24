@@ -7,6 +7,7 @@ import (
 
 	"github.com/dijiacoder/staking-indexer/internal/config"
 	"github.com/dijiacoder/staking-indexer/internal/logger"
+	"github.com/dijiacoder/staking-indexer/internal/metrics"
 	"github.com/dijiacoder/staking-indexer/internal/repository"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"go.uber.org/zap"
@@ -49,12 +50,13 @@ func NewScannerService(
 	}, nil
 }
 
-// Start  runs the scanner loop.
+// Start 运行扫描器循环
 func (s *ScannerService) Start(ctx context.Context) error {
 	logger.Logger.Info("Starting scanner",
 		zap.Int64("chain_id", s.chainID),
 		zap.String("contract", s.contractAddr),
 	)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -72,6 +74,14 @@ func (s *ScannerService) scan(ctx context.Context) error {
 	scanCtx, cancel := context.WithTimeout(ctx, s.scanTimeout)
 	defer cancel()
 
+	labels := map[string]string{
+		"chain_id":        fmt.Sprintf("%d", s.chainID),
+		"contract_address": s.contractAddr,
+	}
+
+	chainIDStr := fmt.Sprintf("%d", s.chainID)
+	startTime := time.Now()
+
 	// 1. Get current cursor from DB
 	cursor, err := s.repo.GetCursor(scanCtx, s.chainID, s.contractAddr)
 	if err != nil {
@@ -80,19 +90,30 @@ func (s *ScannerService) scan(ctx context.Context) error {
 	}
 
 	// 2. Get latest block number from the chain
+	rpcStart := time.Now()
 	latestBlock, err := s.client.BlockNumber(scanCtx)
+	metrics.RPCRequestsTotal.WithLabelValues(chainIDStr, "BlockNumber").Inc()
+	metrics.RPCDuration.WithLabelValues(chainIDStr, "BlockNumber").Observe(time.Since(rpcStart).Seconds())
 	if err != nil {
 		logger.Logger.Error("get block number error", zap.Error(err))
+		metrics.RPCErrorsTotal.WithLabelValues(chainIDStr, "BlockNumber").Inc()
 		return err
 	}
 
 	// 3. Calculate the highest safe block we can process
 	safeBlock := int64(latestBlock) - s.confirmations
+
+	// 更新区块高度指标
+	metrics.ChainLatestBlock.With(labels).Set(float64(latestBlock))
+	metrics.SafeBlock.With(labels).Set(float64(safeBlock))
+	metrics.CurrentScannedBlock.With(labels).Set(float64(cursor.LastScannedBlock))
+	metrics.SyncLag.With(labels).Set(float64(safeBlock - cursor.LastScannedBlock))
+
 	if safeBlock <= cursor.LastScannedBlock {
 		return nil // Up to date
 	}
 
-	// 4. Batch process blocks up to safeBlock (limit to 100 blocks per scan iteration)
+	// 4. Batch process blocks up to safeBlock
 	endBlock := safeBlock
 	if endBlock > cursor.LastScannedBlock+int64(s.batchSize) {
 		endBlock = cursor.LastScannedBlock + int64(s.batchSize)
@@ -105,12 +126,17 @@ func (s *ScannerService) scan(ctx context.Context) error {
 		zap.Int64("safe", safeBlock),
 	)
 
+	blocksProcessed := 0
 	for nextBlock := cursor.LastScannedBlock + 1; nextBlock <= endBlock; nextBlock++ {
 		logger.Logger.Debug("Scanning block", zap.Int64("block", nextBlock))
 		// A. Fetch current block header for reorg verification
+		headerStart := time.Now()
 		header, err := s.processor.GetHeader(scanCtx, nextBlock)
+		metrics.RPCRequestsTotal.WithLabelValues(chainIDStr, "GetHeader").Inc()
+		metrics.RPCDuration.WithLabelValues(chainIDStr, "GetHeader").Observe(time.Since(headerStart).Seconds())
 		if err != nil {
 			logger.Logger.Error("get header error", zap.Error(err))
+			metrics.RPCErrorsTotal.WithLabelValues(chainIDStr, "GetHeader").Inc()
 			return fmt.Errorf("get header error, block: %d, error: %w", nextBlock, err)
 		}
 
@@ -124,6 +150,8 @@ func (s *ScannerService) scan(ctx context.Context) error {
 			logger.Logger.Info("Reorg handled, restarting scan loop",
 				zap.Int64("block", nextBlock),
 			)
+			metrics.ReorgTotal.With(labels).Inc()
+			metrics.LastReorgBlock.With(labels).Set(float64(nextBlock))
 			return nil // Exit scan to let next iteration start from new cursor
 		}
 
@@ -136,6 +164,17 @@ func (s *ScannerService) scan(ctx context.Context) error {
 		if err := s.repo.UpdateCursor(ctx, s.chainID, s.contractAddr, nextBlock, nextBlock); err != nil {
 			return fmt.Errorf("failed to update cursor at block %d: %w", nextBlock, err)
 		}
+
+		// 更新当前扫描区块指标
+		metrics.CurrentScannedBlock.With(labels).Set(float64(nextBlock))
+		metrics.SyncLag.With(labels).Set(float64(safeBlock - nextBlock))
+		blocksProcessed++
+	}
+
+	// 计算每秒处理区块数
+	duration := time.Since(startTime).Seconds()
+	if duration > 0 && blocksProcessed > 0 {
+		metrics.BlocksPerSecond.With(labels).Set(float64(blocksProcessed) / duration)
 	}
 
 	return nil

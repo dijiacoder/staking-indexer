@@ -8,9 +8,10 @@ import (
 )
 
 type Config struct {
-	Database Database `mapstructure:"database"`
-	Ethereum Ethereum `mapstructure:"ethereum"`
-	Scanner  Scanner  `mapstructure:"scanner"`
+	Database   Database   `mapstructure:"database"`
+	Ethereum  Ethereum  `mapstructure:"ethereum"`
+	Scanner   Scanner   `mapstructure:"scanner"`
+	Prometheus Prometheus `mapstructure:"prometheus"`
 }
 
 type Database struct {
@@ -29,6 +30,11 @@ type Scanner struct {
 	BatchSize    int `mapstructure:"batch_size"`
 	ScanInterval int `mapstructure:"scan_interval"`
 	ScanTimeout  int `mapstructure:"scan_timeout"`
+}
+
+type Prometheus struct {
+	Enabled bool `mapstructure:"enabled"`
+	Port    int  `mapstructure:"port"`
 }
 
 func LoadConfig(configPath string) (*Config, error) {

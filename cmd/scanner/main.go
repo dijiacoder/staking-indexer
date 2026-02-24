@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,6 +15,7 @@ import (
 	"github.com/dijiacoder/staking-indexer/internal/repository"
 	"github.com/dijiacoder/staking-indexer/internal/service/scanner"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -55,7 +58,19 @@ func main() {
 		logger.Logger.Fatal("Failed to create scanner service", zap.Error(err))
 	}
 
-	// 5. Setup Context and Signal Handling for Graceful Shutdown
+	// 5. 启动 Prometheus 监控端点
+	if cfg.Prometheus.Enabled {
+		go func() {
+			http.Handle("/metrics", promhttp.Handler())
+			addr := fmt.Sprintf(":%d", cfg.Prometheus.Port)
+			logger.Logger.Info("Starting Prometheus metrics server", zap.String("address", addr))
+			if err := http.ListenAndServe(addr, nil); err != nil && err != http.ErrServerClosed {
+				logger.Logger.Error("Prometheus server error", zap.Error(err))
+			}
+		}()
+	}
+
+	// 6. Setup Context and Signal Handling for Graceful Shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -69,7 +84,7 @@ func main() {
 		cancel()
 	}()
 
-	// 6. Execute Scanner Service
+	// 7. Execute Scanner Service
 	logger.Logger.Info("ZeroToken Stake Scanner started",
 		zap.Int64("chain_id", cfg.Ethereum.ChainID),
 		zap.String("contract", cfg.Ethereum.ContractAddr))
