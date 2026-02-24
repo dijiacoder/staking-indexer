@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dijiacoder/staking-indexer/internal/config"
 	"github.com/dijiacoder/staking-indexer/internal/logger"
 	"github.com/dijiacoder/staking-indexer/internal/repository"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -19,15 +20,15 @@ type ScannerService struct {
 	chainID       int64
 	contractAddr  string
 	confirmations int64
+	batchSize     int
 	scanInterval  time.Duration
+	scanTimeout   time.Duration
 }
 
 func NewScannerService(
 	repo repository.ScannerRepository,
 	client *ethclient.Client,
-	chainID int64,
-	contractAddr string,
-	confirmations int64,
+	cfg *config.Config,
 ) (*ScannerService, error) {
 	processor, err := NewBlockProcessor(repo, client)
 	if err != nil {
@@ -39,10 +40,12 @@ func NewScannerService(
 		client:        client,
 		processor:     processor,
 		reorgHandler:  NewReorgHandler(repo, client),
-		chainID:       chainID,
-		contractAddr:  contractAddr,
-		confirmations: confirmations,
-		scanInterval:  5 * time.Second,
+		chainID:       cfg.Ethereum.ChainID,
+		contractAddr:  cfg.Ethereum.ContractAddr,
+		confirmations: cfg.Ethereum.Confirmations,
+		batchSize:     cfg.Scanner.BatchSize,
+		scanInterval:  time.Duration(cfg.Scanner.ScanInterval) * time.Second,
+		scanTimeout:   time.Duration(cfg.Scanner.ScanTimeout) * time.Second,
 	}, nil
 }
 
@@ -66,15 +69,18 @@ func (s *ScannerService) Start(ctx context.Context) error {
 }
 
 func (s *ScannerService) scan(ctx context.Context) error {
+	scanCtx, cancel := context.WithTimeout(ctx, s.scanTimeout)
+	defer cancel()
+
 	// 1. Get current cursor from DB
-	cursor, err := s.repo.GetCursor(ctx, s.chainID, s.contractAddr)
+	cursor, err := s.repo.GetCursor(scanCtx, s.chainID, s.contractAddr)
 	if err != nil {
 		logger.Logger.Error("get cursor error", zap.Error(err))
 		return err
 	}
 
 	// 2. Get latest block number from the chain
-	latestBlock, err := s.client.BlockNumber(ctx)
+	latestBlock, err := s.client.BlockNumber(scanCtx)
 	if err != nil {
 		logger.Logger.Error("get block number error", zap.Error(err))
 		return err
@@ -88,8 +94,8 @@ func (s *ScannerService) scan(ctx context.Context) error {
 
 	// 4. Batch process blocks up to safeBlock (limit to 100 blocks per scan iteration)
 	endBlock := safeBlock
-	if endBlock > cursor.LastScannedBlock+100 {
-		endBlock = cursor.LastScannedBlock + 100
+	if endBlock > cursor.LastScannedBlock+int64(s.batchSize) {
+		endBlock = cursor.LastScannedBlock + int64(s.batchSize)
 	}
 
 	logger.Logger.Info("Scanning blocks",
@@ -102,14 +108,14 @@ func (s *ScannerService) scan(ctx context.Context) error {
 	for nextBlock := cursor.LastScannedBlock + 1; nextBlock <= endBlock; nextBlock++ {
 		logger.Logger.Debug("Scanning block", zap.Int64("block", nextBlock))
 		// A. Fetch current block header for reorg verification
-		header, err := s.processor.GetHeader(ctx, nextBlock)
+		header, err := s.processor.GetHeader(scanCtx, nextBlock)
 		if err != nil {
 			logger.Logger.Error("get header error", zap.Error(err))
 			return fmt.Errorf("get header error, block: %d, error: %w", nextBlock, err)
 		}
 
 		// B. Verify chain continuity (Reorg Detection)
-		reorged, err := s.reorgHandler.CheckAndHandleReorg(ctx, s.chainID, s.contractAddr, nextBlock, header.ParentHash)
+		reorged, err := s.reorgHandler.CheckAndHandleReorg(scanCtx, s.chainID, s.contractAddr, nextBlock, header.ParentHash)
 		if err != nil {
 			return fmt.Errorf("reorg check failed at block %d: %w", nextBlock, err)
 		}
@@ -122,7 +128,7 @@ func (s *ScannerService) scan(ctx context.Context) error {
 		}
 
 		// C. Process events in the block
-		if err := s.processor.ProcessBlock(ctx, s.chainID, s.contractAddr, nextBlock); err != nil {
+		if err := s.processor.ProcessBlock(scanCtx, s.chainID, s.contractAddr, nextBlock); err != nil {
 			return fmt.Errorf("failed to process block %d: %w", nextBlock, err)
 		}
 

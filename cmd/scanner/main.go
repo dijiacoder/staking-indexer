@@ -34,6 +34,10 @@ func main() {
 		logger.Logger.Fatal("Failed to connect to database", zap.Error(err))
 	}
 
+	if cfg.Database.Debug {
+		db = db.Debug()
+	}
+
 	// 3. Initialize Ethereum RPC Client
 	client, err := ethclient.Dial(cfg.Ethereum.RPCURL)
 	if err != nil {
@@ -45,9 +49,7 @@ func main() {
 	svc, err := scanner.NewScannerService(
 		repo,
 		client,
-		cfg.Ethereum.ChainID,
-		cfg.Ethereum.ContractAddr,
-		cfg.Ethereum.Confirmations,
+		cfg,
 	)
 	if err != nil {
 		logger.Logger.Fatal("Failed to create scanner service", zap.Error(err))

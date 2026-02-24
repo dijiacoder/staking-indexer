@@ -59,9 +59,15 @@ func (m *EventHandlerManager) HandleEvent(ctx context.Context, chainID int64, co
 	eventHash := log.Topics[0]
 	eventName, exists := m.stakingContract.GetEventName(eventHash)
 	if !exists {
-		logger.Logger.Debug("unknown event hash",
-			zap.String("hash", eventHash.Hex()),
-		)
+		//logger.Logger.Debug("unknown event hash",
+		//	zap.String("hash", eventHash.Hex()),
+		//)
+		return nil
+	}
+
+	ignoredEvent := m.stakingContract.IsIgnoredEvent(eventName)
+	if ignoredEvent {
+		logger.Logger.Info("ignoring event", zap.String("eventName", eventName))
 		return nil
 	}
 

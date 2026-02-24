@@ -6,19 +6,19 @@ import (
 )
 
 type StakingContract struct {
-	// 事件签名映射表
 	EventSignatures map[common.Hash]string
-	// 用于快速查找的反向映射
-	EventNames map[string]common.Hash
+	EventNames      map[string]common.Hash
+	IgnoredEvents   map[string]bool
 }
 
 func NewStakingContract() *StakingContract {
 	sc := &StakingContract{
 		EventSignatures: make(map[common.Hash]string),
 		EventNames:      make(map[string]common.Hash),
+		IgnoredEvents:   make(map[string]bool),
 	}
 
-	// 注册所有事件签名
+	// 注册“关注”的事件签名
 	events := map[string]string{
 		"Deposit":              "Deposit(address,uint256,uint256)",
 		"RequestUnstake":       "RequestUnstake(address,uint256,uint256)",
@@ -44,13 +44,14 @@ func NewStakingContract() *StakingContract {
 		sc.EventNames[eventName] = hash
 	}
 
-	return sc
-}
+	ignoredEvents := []string{
+		"SetZeroToken",
+	}
+	for _, eventName := range ignoredEvents {
+		sc.IgnoredEvents[eventName] = true
+	}
 
-// IsTrackedEvent 检查是否是我们关注的事件
-func (sc *StakingContract) IsTrackedEvent(eventHash common.Hash) bool {
-	_, exists := sc.EventSignatures[eventHash]
-	return exists
+	return sc
 }
 
 // GetEventName 根据哈希获取事件名称
@@ -63,4 +64,9 @@ func (sc *StakingContract) GetEventName(eventHash common.Hash) (string, bool) {
 func (sc *StakingContract) GetEventSignature(eventName string) (common.Hash, bool) {
 	hash, exists := sc.EventNames[eventName]
 	return hash, exists
+}
+
+// IsIgnoredEvent 检查是否是不关注的事件
+func (sc *StakingContract) IsIgnoredEvent(eventName string) bool {
+	return sc.IgnoredEvents[eventName]
 }

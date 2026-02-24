@@ -10,20 +10,26 @@ import (
 type Config struct {
 	Database Database `mapstructure:"database"`
 	Ethereum Ethereum `mapstructure:"ethereum"`
+	Scanner  Scanner  `mapstructure:"scanner"`
 }
 
 type Database struct {
-	DSN string `mapstructure:"dsn"`
+	DSN   string `mapstructure:"dsn"`
+	Debug bool   `mapstructure:"debug"`
 }
 
 type Ethereum struct {
-	RPCURL         string `mapstructure:"rpc_url"`
-	ChainID        int64  `mapstructure:"chain_id"`
-	ContractAddr   string `mapstructure:"contract_address"`
-	Confirmations  int64  `mapstructure:"confirmations"`
+	RPCURL        string `mapstructure:"rpc_url"`
+	ChainID       int64  `mapstructure:"chain_id"`
+	ContractAddr  string `mapstructure:"contract_address"`
+	Confirmations int64  `mapstructure:"confirmations"`
 }
 
-var GlobalConfig *Config
+type Scanner struct {
+	BatchSize    int `mapstructure:"batch_size"`
+	ScanInterval int `mapstructure:"scan_interval"`
+	ScanTimeout  int `mapstructure:"scan_timeout"`
+}
 
 func LoadConfig(configPath string) (*Config, error) {
 	v := viper.New()
@@ -40,6 +46,5 @@ func LoadConfig(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	GlobalConfig = &cfg
 	return &cfg, nil
 }
